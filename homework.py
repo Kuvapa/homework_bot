@@ -6,22 +6,11 @@ from http import HTTPStatus
 
 import requests
 import telegram
+from telegram import TelegramError
 from dotenv import load_dotenv
 
 load_dotenv()
-logging.basicConfig(
-    format='%(asctime)s, %(levelname)s, %(name)s, %(message)s',
-    level=logging.INFO,
-    filename='main.log',
-    filemode='w',
-)
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-handler = logging.StreamHandler(sys.stdout)
-logger.addHandler(handler)
-formatter = logging.Formatter(
-    '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-handler.setFormatter(formatter)
+
 
 PRACTICUM_TOKEN = os.getenv('yandex_token')
 TELEGRAM_TOKEN = os.getenv('telegram_token')
@@ -43,50 +32,57 @@ def send_message(bot, message):
     """Отправляет сообщение о результатах ревью."""
     try:
         bot.send_message(TELEGRAM_CHAT_ID, message)
-        logger.info(f'Сообщение в чат {TELEGRAM_CHAT_ID}: {message}')
-    except Exception:
-        logger.error('Сообщение не отправлено')
+        logging.info(f'Сообщение в чат {TELEGRAM_CHAT_ID}: {message}')
+    except TelegramError:
+        raise TelegramError('Сообщение не отправлено по причине:',
+                            sys.exc_info())
 
 
 def get_api_answer(current_timestamp):
     """Получает запрос с API."""
     timestamp = current_timestamp or int(time.time())
-    params = {'from_date': timestamp}
+    params = dict(url=ENDPOINT, headers=HEADERS,
+                  params={'from_date': timestamp})
     try:
-        response = requests.get(ENDPOINT, headers=HEADERS, params=params)
+        response = requests.get(**params)
     except Exception as error:
-        logger.error(f'Ошибка при запросе: {error}')
+        raise Exception(f'Ошибка при запросе {params}: {error}')
     if response.status_code != HTTPStatus.OK:
-        logger.error('Сайт не доступен')
         raise ConnectionError('cайт недоступен')
-    response = response.json()
-    return response
+    return response.json()
 
 
 def check_response(response):
     """Проверяет корректность ответа API."""
-    if type(response) is not dict:
-        logger.error('Неверный формат данных')
+    logging.info('Начало получение ответа от сервера')
+    if not isinstance(response, dict):
         raise TypeError('Неверный формат данных')
     try:
-        homework = response.get('homeworks')
-    except IndexError:
-        logger.error('Пусто, нечего отправлять')
-    if type(homework) is not list:
-        logger.error('Неверный формат данных')
+        homework = response['homeworks']
+    except KeyError:
+        raise KeyError(f'Такой ключ {homework} отстуствует на сервере')
+    try:
+        current_date = response['current_date']
+    except KeyError:
+        raise KeyError(f'Такой ключ {current_date} отстуствует на сервере')
+    if not isinstance(homework, list):
         raise TypeError('Неверный формат данных')
     return homework
 
 
 def parse_status(homework):
     """Извелкает информацию о статусе домашки."""
-    homework_name = homework['homework_name']
-    homework_status = homework['status']
-    if 'homework_name' not in homework:
-        logger.error('Работы с таким именем не обнаружено')
+    try:
+        homework_name = homework['homework_name']
+    except KeyError:
+        raise KeyError('Запрашиваемый ключ имеет другое значение. Проверьте')
+    try:
+        homework_status = homework['status']
+    except KeyError:
+        raise KeyError('Запрашиваемый ключ имеет другое значение. Проверьте')
+    if homework.get('homework_name') not in homework.get('homework_name'):
         raise KeyError('Работы с таким именем не обнаружено')
     if homework_status not in HOMEWORK_STATUSES:
-        logger.error('Непредвиденный статус работы')
         raise KeyError('Непредвиденный статус работы')
     verdict = HOMEWORK_STATUSES[homework_status]
     return f'Изменился статус проверки работы "{homework_name}". {verdict}'
@@ -95,10 +91,13 @@ def parse_status(homework):
 def check_tokens():
     """Проверяет наличие всех токенов."""
     try:
-        if all([PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID]):
+        if all([PRACTICUM_TOKEN and TELEGRAM_TOKEN and TELEGRAM_CHAT_ID]):
             return True
-    except KeyError:
-        logger.critical('Отсутсвует один из элементов')
+    except AttributeError:
+        raise AttributeError(
+            f'Отсутсвует один из элементов'
+            f'{PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID}'
+        )
 
 
 def main():
@@ -114,14 +113,27 @@ def main():
                 message = parse_status(homework[0])
                 bot.send_message(TELEGRAM_CHAT_ID, message)
                 time.sleep(RETRY_TIME)
-            except Exception as error:
-                message = f'Сбой в работе программы: {error}'
+            except Exception as errors:
+                logging.error(f'Сбой в работе программы: {errors}')
+                message = f'Сбой в работе программы: {errors}'
                 bot.send_message(TELEGRAM_CHAT_ID, message)
                 time.sleep(RETRY_TIME)
     else:
-        raise KeyError('Отсутсвует один из элементов')
-        logger.critical('Отсутсвует один из элементов')
+        logging.critical(
+            f'Отсутсвует один из элементов'
+            f'{PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID}'
+        )
+        sys.exit(
+            f'Отсутсвует один из элементов'
+            f'{PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID}'
+        )
 
 
 if __name__ == '__main__':
+    logging.basicConfig(
+        format=('%(asctime)s, %(levelname)s, %(funcName)s,'
+                '%(lineno)d, %(name)s, %(message)s'),
+        level=logging.INFO,
+        handlers=[logging.StreamHandler(stream=sys.stdout)],
+    )
     main()
