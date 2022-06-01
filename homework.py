@@ -84,29 +84,13 @@ def parse_status(homework):
 
 def check_tokens():
     """Проверяет наличие всех токенов."""
-    if all([PRACTICUM_TOKEN and TELEGRAM_TOKEN and TELEGRAM_CHAT_ID]):
-        return True
+    return all([PRACTICUM_TOKEN and TELEGRAM_TOKEN and TELEGRAM_CHAT_ID])
 
 
 def main():
     """Основная логика работы бота."""
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
     current_timestamp = int(time.time())
-    if check_tokens() is True:
-        while True:
-            try:
-                response = get_api_answer(current_timestamp)
-                current_timestamp = response.get('current_date',
-                                                 current_timestamp)
-                homework = check_response(response)
-                message = parse_status(homework[0])
-                bot.send_message(TELEGRAM_CHAT_ID, message)
-                time.sleep(RETRY_TIME)
-            except Exception as errors:
-                logging.error(f'Сбой в работе программы: {errors}')
-                message = f'Сбой в работе программы: {errors}'
-                bot.send_message(TELEGRAM_CHAT_ID, message)
-                time.sleep(RETRY_TIME)
     if check_tokens() is False:
         logging.critical(
             f'Отсутсвует один из элементов'
@@ -116,6 +100,20 @@ def main():
             f'Отсутсвует один из элементов'
             f'{PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID}'
         )
+    while True:
+        try:
+            response = get_api_answer(current_timestamp)
+            current_timestamp = response.get('current_date',
+                                             current_timestamp)
+            homework = check_response(response)
+            message = parse_status(homework[0])
+            bot.send_message(TELEGRAM_CHAT_ID, message)
+            time.sleep(RETRY_TIME)
+        except Exception as errors:
+            logging.error(f'Сбой в работе программы: {errors}')
+            message = f'Сбой в работе программы: {errors}'
+            bot.send_message(TELEGRAM_CHAT_ID, message)
+            time.sleep(RETRY_TIME)
 
 
 if __name__ == '__main__':
