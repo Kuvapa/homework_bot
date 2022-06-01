@@ -6,7 +6,6 @@ from http import HTTPStatus
 
 import requests
 import telegram
-from telegram import TelegramError
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -32,72 +31,61 @@ def send_message(bot, message):
     """Отправляет сообщение о результатах ревью."""
     try:
         bot.send_message(TELEGRAM_CHAT_ID, message)
-        logging.info(f'Сообщение в чат {TELEGRAM_CHAT_ID}: {message}')
-    except TelegramError:
-        raise TelegramError('Сообщение не отправлено по причине:',
-                            sys.exc_info())
+        logging.info('Сообщение в чат успешно отправлено')
+    except Exception as TelegramError:
+        sys.exc_info(TelegramError)
 
 
 def get_api_answer(current_timestamp):
     """Получает запрос с API."""
-    timestamp = current_timestamp or int(time.time())
     params = dict(url=ENDPOINT, headers=HEADERS,
-                  params={'from_date': timestamp})
+                  params={'from_date': current_timestamp})
     try:
         response = requests.get(**params)
     except Exception as error:
         raise Exception(f'Ошибка при запросе {params}: {error}')
     if response.status_code != HTTPStatus.OK:
         raise ConnectionError('cайт недоступен')
-    return response.json()
+    try:
+        return response.json()
+    except Exception as JSONDecodeError:
+        raise Exception(f'Ошибка {JSONDecodeError}')
 
 
 def check_response(response):
     """Проверяет корректность ответа API."""
     logging.info('Начало получение ответа от сервера')
+    homework = response['homeworks']
+    current_date = response['current_date']
     if not isinstance(response, dict):
-        raise TypeError('Неверный формат данных')
-    try:
-        homework = response['homeworks']
-    except KeyError:
+        raise TypeError(f'Неверный формат данных {response}')
+    if homework is None:
         raise KeyError(f'Такой ключ {homework} отстуствует на сервере')
-    try:
-        current_date = response['current_date']
-    except KeyError:
+    if current_date is None:
         raise KeyError(f'Такой ключ {current_date} отстуствует на сервере')
     if not isinstance(homework, list):
-        raise TypeError('Неверный формат данных')
+        raise TypeError(f'Неверный формат данных {homework}')
     return homework
 
 
 def parse_status(homework):
     """Извелкает информацию о статусе домашки."""
-    try:
-        homework_name = homework['homework_name']
-    except KeyError:
-        raise KeyError('Запрашиваемый ключ имеет другое значение. Проверьте')
-    try:
-        homework_status = homework['status']
-    except KeyError:
-        raise KeyError('Запрашиваемый ключ имеет другое значение. Проверьте')
-    if homework.get('homework_name') not in homework.get('homework_name'):
-        raise KeyError('Работы с таким именем не обнаружено')
+    homework_name = homework['homework_name']
+    homework_status = homework['status']
+    if homework_name is None:
+        raise KeyError(f'Запрашиваемый ключ {homework_name} '
+                       f'имеет другое значение. Проверьте')
     if homework_status not in HOMEWORK_STATUSES:
-        raise KeyError('Непредвиденный статус работы')
+        raise KeyError(f'Такого значения: {homework_status}, '
+                       f'нет в списке {HOMEWORK_STATUSES}')
     verdict = HOMEWORK_STATUSES[homework_status]
     return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
 
 def check_tokens():
     """Проверяет наличие всех токенов."""
-    try:
-        if all([PRACTICUM_TOKEN and TELEGRAM_TOKEN and TELEGRAM_CHAT_ID]):
-            return True
-    except AttributeError:
-        raise AttributeError(
-            f'Отсутсвует один из элементов'
-            f'{PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID}'
-        )
+    if all([PRACTICUM_TOKEN and TELEGRAM_TOKEN and TELEGRAM_CHAT_ID]):
+        return True
 
 
 def main():
@@ -108,7 +96,8 @@ def main():
         while True:
             try:
                 response = get_api_answer(current_timestamp)
-                current_timestamp = response.get('current_date')
+                current_timestamp = response.get('current_date',
+                                                 current_timestamp)
                 homework = check_response(response)
                 message = parse_status(homework[0])
                 bot.send_message(TELEGRAM_CHAT_ID, message)
@@ -118,7 +107,7 @@ def main():
                 message = f'Сбой в работе программы: {errors}'
                 bot.send_message(TELEGRAM_CHAT_ID, message)
                 time.sleep(RETRY_TIME)
-    else:
+    if check_tokens() is False:
         logging.critical(
             f'Отсутсвует один из элементов'
             f'{PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID}'
