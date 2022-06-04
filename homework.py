@@ -117,7 +117,10 @@ def main():
                 exc_info=True
             )
         except KeyError:
-            logging.error('Запрашиваемый ключ либо отстуствует на сервере, либо имеет другое значение или формат')
+            logging.error(
+                'Запрашиваемый ключ либо отстуствует на сервере, '
+                'либо имеет другое значение или формат'
+            )
         except Exception as error:
             logging.error(f'Сбой в работе программы: {error}')
             message = (f'Сбой в работе программы: {error}')
