@@ -7,6 +7,9 @@ from http import HTTPStatus
 import requests
 import telegram
 from dotenv import load_dotenv
+from telegram import TelegramError
+
+from exceptions import TelegramSendMessageError
 
 load_dotenv()
 
@@ -20,7 +23,7 @@ ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
 HEADERS = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
 
 
-HOMEWORK_STATUSES = {
+HOMEWORK_VERDICTS = {
     'approved': 'Работа проверена: ревьюеру всё понравилось. Ура!',
     'reviewing': 'Работа взята на проверку ревьюером.',
     'rejected': 'Работа проверена: у ревьюера есть замечания.'
@@ -31,12 +34,13 @@ def send_message(bot, message):
     """Отправляет сообщение о результатах ревью."""
     try:
         bot.send_message(TELEGRAM_CHAT_ID, message)
-        logging.info('Сообщение в чат успешно отправлено')
-    except Exception as telegram_send_message_error:
-        logging.info(
-            f'Произошла ошибка {telegram_send_message_error}, подробности: ',
+    except TelegramError:
+        raise TelegramSendMessageError(
+            'Произошла ошибка отправки сообщения, подробности: ',
             sys.exc_info()
         )
+    else:
+        logging.info('Сообщение в чат успешно отправлено')
 
 
 def get_api_answer(current_timestamp):
@@ -60,9 +64,11 @@ def check_response(response):
     homework_list = response.get('homeworks')
     current_date = response.get('current_date')
     if homework_list is None:
-        raise KeyError(f'Такой ключ {homework_list} отстуствует на сервере')
+        raise KeyError(f'Ключ {homework_list} либо отстуствует '
+                       'на сервере, либо имеет другое значение или формат')
     if current_date is None:
-        raise KeyError(f'Такой ключ {current_date} отстуствует на сервере')
+        raise KeyError(f'Ключ {current_date} либо отстуствует '
+                       'на сервере, либо имеет другое значение или формат')
     if not isinstance(homework_list, list):
         raise TypeError(f'Неверный формат данных {homework_list}')
     return homework_list
@@ -75,10 +81,10 @@ def parse_status(homework):
     if homework_name is None:
         raise KeyError(f'Запрашиваемый ключ {homework_name} '
                        f'имеет другое значение. Проверьте')
-    if homework_status not in HOMEWORK_STATUSES:
+    if homework_status not in HOMEWORK_VERDICTS:
         raise ValueError(f'Такого значения: {homework_status}, '
-                         f'нет в списке {HOMEWORK_STATUSES}')
-    verdict = HOMEWORK_STATUSES[homework_status]
+                         f'нет в списке {HOMEWORK_VERDICTS}')
+    verdict = HOMEWORK_VERDICTS[homework_status]
     return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
 
@@ -89,28 +95,32 @@ def check_tokens():
 
 def main():
     """Основная логика работы бота."""
+    critical_msg = ('Отсутсвует один из элементов '
+                    f'{PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID}')
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
     current_timestamp = int(time.time())
     if not check_tokens():
-        logging.critical(
-            f'Отсутсвует один из элементов'
-            f'{PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID}'
-        )
-        sys.exit(
-            f'Отсутсвует один из элементов'
-            f'{PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID}'
-        )
+        logging.critical(critical_msg)
+        sys.exit(critical_msg)
     while True:
         try:
             response = get_api_answer(current_timestamp)
             current_timestamp = response.get('current_date',
                                              current_timestamp)
-            homework = check_response(response)
-            message = parse_status(homework[0])
-            bot.send_message(TELEGRAM_CHAT_ID, message)
-        except Exception as errors:
-            logging.error(f'Сбой в работе программы: {errors}')
-            message = f'Сбой в работе программы: {errors}'
+            homework_list = check_response(response)
+            if len(homework_list) > 0:
+                message = parse_status(homework_list[0])
+                bot.send_message(TELEGRAM_CHAT_ID, message)
+        except TelegramError:
+            logging.error(
+                'Произошла ошибка отправки сообщения, подробности: ',
+                exc_info=True
+            )
+        except KeyError:
+            logging.error('Запрашиваемый ключ либо отстуствует на сервере, либо имеет другое значение или формат')
+        except Exception as error:
+            logging.error(f'Сбой в работе программы: {error}')
+            message = (f'Сбой в работе программы: {error}')
             bot.send_message(TELEGRAM_CHAT_ID, message)
         finally:
             time.sleep(RETRY_TIME)
