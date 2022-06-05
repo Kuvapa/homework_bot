@@ -4,7 +4,7 @@ class TelegramSendMessageError(Exception):
     pass
 
 
-class CurrentDateKeyError(Exception):
+class CurrentDateKeyError(KeyError):
     """Ошибка наличия ключа на сервере."""
 
     pass
