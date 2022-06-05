@@ -9,7 +9,7 @@ import telegram
 from dotenv import load_dotenv
 from telegram import TelegramError
 
-from exceptions import TelegramSendMessageError
+from exceptions import CurrentDateKeyError, TelegramSendMessageError
 
 load_dotenv()
 
@@ -67,8 +67,10 @@ def check_response(response):
         raise KeyError(f'Ключ {homework_list} либо отстуствует '
                        'на сервере, либо имеет другое значение или формат')
     if current_date is None:
-        raise KeyError(f'Ключ {current_date} либо отстуствует '
-                       'на сервере, либо имеет другое значение или формат')
+        raise CurrentDateKeyError(
+            f'Ключ {current_date} либо отстуствует '
+            'на сервере, либо имеет другое значение или формат'
+        )
     if not isinstance(homework_list, list):
         raise TypeError(f'Неверный формат данных {homework_list}')
     return homework_list
@@ -111,12 +113,12 @@ def main():
             if len(homework_list) > 0:
                 message = parse_status(homework_list[0])
                 bot.send_message(TELEGRAM_CHAT_ID, message)
-        except TelegramError:
+        except TelegramSendMessageError:
             logging.error(
                 'Произошла ошибка отправки сообщения, подробности: ',
                 exc_info=True
             )
-        except KeyError:
+        except CurrentDateKeyError:
             logging.error(
                 'Запрашиваемый ключ либо отстуствует на сервере, '
                 'либо имеет другое значение или формат'
