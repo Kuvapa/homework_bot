@@ -9,7 +9,7 @@ import telegram
 from dotenv import load_dotenv
 from telegram import TelegramError
 
-from exceptions import CurrentDateKeyError, TelegramSendMessageError
+from exceptions import TelegramSendMessageError
 
 load_dotenv()
 
@@ -53,7 +53,7 @@ def get_api_answer(current_timestamp):
             raise ConnectionError('cайт недоступен')
         return response.json()
     except Exception as error:
-        raise Exception(f'Ошибка при запросе {params}: {error}')
+        raise ConnectionError(f'Ошибка при запросе {params}: {error}')
 
 
 def check_response(response):
@@ -67,7 +67,7 @@ def check_response(response):
         raise KeyError(f'Ключ {homework_list} либо отстуствует '
                        'на сервере, либо имеет другое значение или формат')
     if current_date is None:
-        raise CurrentDateKeyError(
+        raise TelegramSendMessageError(
             f'Ключ {current_date} либо отстуствует '
             'на сервере, либо имеет другое значение или формат'
         )
@@ -117,11 +117,6 @@ def main():
             logging.error(
                 'Произошла ошибка отправки сообщения, подробности: ',
                 exc_info=True
-            )
-        except CurrentDateKeyError:
-            logging.error(
-                'Запрашиваемый ключ либо отстуствует на сервере, '
-                'либо имеет другое значение или формат'
             )
         except Exception as error:
             logging.error(f'Сбой в работе программы: {error}')
